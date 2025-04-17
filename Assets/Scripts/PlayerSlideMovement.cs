@@ -40,7 +40,7 @@ public class PlayerSlideMovement : MonoBehaviour
         // Jump
         if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
         {
-            rb.velocity = new Vector2(rb.velocity.x, 0); // reset vertical speed
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0); // reset vertical speed
             rb.AddForce(transform.up * jumpForce, ForceMode2D.Impulse);
         }
     }
@@ -67,8 +67,8 @@ public class PlayerSlideMovement : MonoBehaviour
 
         // Preserve vertical movement
         Vector2 velocity = localRight * currentSpeed;
-        velocity.y = rb.velocity.y;
-        rb.velocity = velocity;
+        velocity.y = rb.linearVelocity.y;
+        rb.linearVelocity = velocity;
     }
 
     void OnDrawGizmosSelected()

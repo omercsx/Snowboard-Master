@@ -16,11 +16,14 @@ public class SnowboarderController : MonoBehaviour
     [SerializeField] private float brakeForce = 20f;
     [SerializeField] private float jumpForce = 12f;
     [SerializeField] private float slowDownMultiplier = 0.5f;
+    [SerializeField] private float minForwardSpeed = 2f;
+    [SerializeField] private float constantForwardForce = 5f; // Always apply this force
 
     [Header("Ground Check")]
     [SerializeField] private Transform groundCheck;
     [SerializeField] private float groundCheckRadius = 0.2f;
     [SerializeField] private LayerMask groundLayer;
+    [SerializeField] private float airFallMultiplier = 1.5f; // Makes falling faster
 
     [Header("Touch Settings")]
     [SerializeField] private float doubleTapThreshold = 0.3f;
@@ -61,6 +64,15 @@ public class SnowboarderController : MonoBehaviour
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        
+        if (groundCheck == null)
+        {
+            GameObject checkObj = new GameObject("GroundCheck");
+            checkObj.transform.parent = transform;
+            checkObj.transform.localPosition = new Vector3(0, -0.5f, 0);
+            groundCheck = checkObj.transform;
+            Debug.LogWarning("GroundCheck was missing! Created a new one.");
+        }
     }
 
     private void Start()
@@ -92,8 +104,17 @@ public class SnowboarderController : MonoBehaviour
 
         if (!isGrounded)
             ApplyAirRotation();
-
-        ApplyMovement();
+        else
+            ApplyMovement();
+            
+        // Always apply some forward momentum regardless of ground state
+        ApplyConstantForwardForce();
+        
+        // Apply faster falling
+        if (rb.linearVelocity.y < 0)
+        {
+            rb.linearVelocity += Vector2.up * Physics2D.gravity.y * (airFallMultiplier - 1) * Time.fixedDeltaTime;
+        }
     }
 
     private void OnDrawGizmosSelected()
@@ -162,7 +183,35 @@ public class SnowboarderController : MonoBehaviour
 
     private void CheckIfGrounded()
     {
-        isGrounded = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
+        if (groundCheck == null)
+        {
+            Debug.LogError("GroundCheck transform is missing!");
+            return;
+        }
+        
+        if (groundLayer.value == 0)
+        {
+            groundLayer = ~(1 << gameObject.layer);
+            Debug.LogWarning("GroundLayer was not set! Using all layers except player layer.");
+        }
+        
+        // Cast a ray down to check for ground
+        RaycastHit2D hit = Physics2D.Raycast(groundCheck.position, Vector2.down, groundCheckRadius * 1.5f, groundLayer);
+        
+        // Use both methods for more reliable ground detection
+        bool circleCheck = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
+        
+        isGrounded = circleCheck || hit.collider != null;
+        
+        // Debug visualization
+        if (hit.collider != null)
+        {
+            Debug.DrawLine(groundCheck.position, hit.point, Color.green, 0.1f);
+        }
+        else
+        {
+            Debug.DrawRay(groundCheck.position, Vector2.down * groundCheckRadius * 1.5f, Color.red, 0.1f);
+        }
     }
 
     private void ApplyAirRotation()
@@ -178,7 +227,7 @@ public class SnowboarderController : MonoBehaviour
     {
         if (!isGrounded) return;
 
-        currentSpeed = Vector2.Dot(rb.velocity, transform.right.normalized);
+        currentSpeed = Vector2.Dot(rb.linearVelocity, transform.right.normalized);
         isBraking = inputDirection != 0 &&
                     Mathf.Sign(inputDirection) != Mathf.Sign(currentSpeed) &&
                     Mathf.Abs(currentSpeed) > 0.1f;
@@ -201,20 +250,39 @@ public class SnowboarderController : MonoBehaviour
         }
         else
         {
-            rb.velocity = new Vector2(rb.velocity.x * 0.9f, rb.velocity.y);
+            // Apply less slowdown to maintain momentum
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x * 0.95f, rb.linearVelocity.y);
+            
+            if (Mathf.Abs(currentSpeed) < minForwardSpeed)
+            {
+                float directionSign = transform.localScale.x > 0 ? 1 : -1;
+                rb.AddForce(transform.right.normalized * moveForce * 0.75f * directionSign, ForceMode2D.Force);
+            }
         }
 
-        rb.velocity = new Vector2(
-            Mathf.Clamp(rb.velocity.x, -maxSpeed, maxSpeed),
-            rb.velocity.y
+        rb.linearVelocity = new Vector2(
+            Mathf.Clamp(rb.linearVelocity.x, -maxSpeed, maxSpeed),
+            rb.linearVelocity.y
         );
 
         if (jumpRequested)
         {
-            rb.velocity = new Vector2(rb.velocity.x, 0f); // Optional vertical reset
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f);
             rb.AddForce(transform.up * jumpForce, ForceMode2D.Impulse);
+            
+            // Add a bit of forward momentum when jumping
+            float directionSign = transform.localScale.x > 0 ? 1 : -1;
+            rb.AddForce(transform.right.normalized * moveForce * 0.5f * directionSign, ForceMode2D.Impulse);
+            
             jumpRequested = false;
         }
+    }
+
+    private void ApplyConstantForwardForce()
+    {
+        // Always apply some forward momentum (direction based on character orientation)
+        float directionSign = transform.localScale.x > 0 ? 1 : -1;
+        rb.AddForce(transform.right.normalized * constantForwardForce * directionSign, ForceMode2D.Force);
     }
 
     #endregion
@@ -333,17 +401,15 @@ public class SnowboarderController : MonoBehaviour
     public void DisableControls()
     {
         controlsDisabled = true;
-        rb.velocity = Vector2.zero;
+        rb.linearVelocity = Vector2.zero;
     }
 
     public void CorrectRotation()
     {
-        // Reset rotation
         transform.rotation = Quaternion.identity;
         rb.angularVelocity = 0f;
 
-        // Slightly lift the player upwards to avoid getting stuck in ground
-        transform.position += new Vector3(0f, 1f, 0f); // adjust Y value as needed
+        transform.position += new Vector3(0f, 1f, 0f);
     }
 
     #endregion

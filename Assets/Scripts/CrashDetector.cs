@@ -34,7 +34,7 @@ public class CrashDetector : MonoBehaviour
 
                 // Optional: bounce a bit to get unstuck
                 player.transform.position += Vector3.up * 1.5f;
-                player.GetComponent<Rigidbody2D>().velocity = Vector2.zero;
+                player.GetComponent<Rigidbody2D>().linearVelocity = Vector2.zero;
 
                 Debug.Log("Used Extra Life!");
                 return;
